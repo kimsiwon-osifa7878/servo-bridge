@@ -1,501 +1,100 @@
-# ESP32-C3 8채널 서보 브리지
+# ESP32 ROS2 Servo Bridge
 
-ESP32-C3 SuperMini에서 8개의 서보 모터를 제어하고, USB 시리얼을 통해
-ROS 2 또는 Python 프로그램과 연결하기 위한 Arduino 펌웨어이다.
+ESP32-C3와 PCA9685로 최대 8개 서보를 제어하고, Windows의 ROS2 브리지와
+PySide6 UI에서 각도와 PWM 상태를 확인하는 프로젝트다.
 
-펌웨어는 각 서보 채널의 목표 각도 또는 raw PWM 펄스를 받아 독립적으로
-이동시킨다. 실행시간과 시작 지연을 채널별로 지정할 수 있으며, 이동 중인
-논리 각도와 PWM 상태를 시리얼로 출력한다. 각 채널은 로봇 관절축 또는
-그리퍼 같은 보조 액추에이터에 대응할 수 있으며, 7번과 8번을 관절축으로
-한정하지 않는다.
+## 1. 배선 확인
 
-## 개발 환경
+- PCA9685 `VCC` → ESP32 `3.3V`
+- PCA9685 `V+` → 별도 서보 전원
+- PCA9685 `SDA` → GPIO 8
+- PCA9685 `SCL` → GPIO 9
+- PCA9685 `OE` → GPIO 10
+- `OE`와 PCA9685 `VCC` 사이에 10kΩ 풀업 저항 연결
+- ESP32, PCA9685, 서보 전원의 GND를 공통 연결
 
-현재 빌드 결과에서 확인한 환경은 다음과 같다.
+서보 전원은 ESP32에서 공급하지 않는다.
 
-- 보드: ESP32-C3 SuperMini
-- Arduino FQBN: `esp32:esp32:nologo_esp32c3_super_mini`
-- Arduino ESP32 코어: `3.3.10`
-- 외부 라이브러리: `Adafruit PWM Servo Driver Library`
-- 스케치: `servo-bridge.ino`
+## 2. ESP32 펌웨어 업로드
 
-Arduino Library Manager에서 `Adafruit PWM Servo Driver Library`를 설치해야
-한다. 의존 라이브러리인 `Adafruit BusIO`도 함께 설치된다.
+Arduino IDE에서 다음을 준비한다.
 
-## 하드웨어 및 채널 설정
+- 보드: `Nologo ESP32C3 Super Mini`
+- 라이브러리: `Adafruit PWM Servo Driver Library`
+- 파일: `servo-bridge.ino`
 
-모터 번호와 PCA9685 출력 채널 번호는 동일하다. PCA9685 채널 0은 사용하지
-않으며 현재 모터 1~8은 PCA9685 출력 채널 1~8에 연결된다.
+보드를 연결하고 업로드한다. 업로드 후 시리얼 모니터를 `115200 baud`로
+열었을 때 부팅 과정 뒤에 `READY`가 출력되어야 한다.
 
-| 채널 | PCA9685 | 서보 가동 범위 | 초기 논리각 | 방향 | 기본 오프셋 | 허용 논리각 |
-|---:|---:|---:|---:|---|---:|---:|
-| 1 | 1 | 270° | 90° | 반전 | 0.00° | 5~175° |
-| 2 | 2 | 270° | 90° | 반전 | -9.45° | 5~175° |
-| 3 | 3 | 270° | 90° | 정방향 | +9.45° | 5~175° |
-| 4 | 4 | 270° | 90° | 반전 | -14.85° | 5~175° |
-| 5 | 5 | 180° | 90° | 정방향 | +2.70° | 5~175° |
-| 6 | 6 | 180° | 90° | 정방향 | 0.00° | 5~175° |
-| 7 | 7 | 180° | 90° | 정방향 | 0.00° | 5~175° |
-| 8 | 8 | 180° | 90° | 정방향 | 0.00° | 5~175° |
+## 3. ROS2 패키지 빌드
 
-PCA9685 배선:
+처음 한 번 또는 Python 코드를 수정한 뒤 실행한다.
 
-- `VCC`: ESP32-C3 `3.3V`
-- `SDA`: GPIO 8
-- `SCL`: GPIO 9
-- `V+`: 별도 서보 전원
-- `OE`: GPIO 10에 직접 연결하고 PCA9685 `VCC` 3.3V에 10 kΩ 풀업
-- I2C 주소: `0x40`
+```powershell
+cd C:\pixi_ws
+pixi shell
+call C:\pixi_ws\ros2-windows\local_setup.bat
+cd C:\dev\servo-bridge\ros2
+colcon build --symlink-install
+```
 
-공통 PWM 설정:
+## 4. 브리지 실행
 
-- PWM 설정 주파수: 50 Hz
-- PCA9685 분해능: 12비트
-- 25 MHz 기본 발진기 기준 실제 주파수: 약 50.03 Hz
-- 한 카운트의 펄스 폭: 약 4.88 us
-- 최소 펄스: 500 us
-- 최대 펄스: 2500 us
-- 모션 갱신 주기: 20 ms
-- 기준 최대 속도: 60°/s
+새 PowerShell 창을 열고 다음 명령을 실행한다.
 
-서보 전원은 ESP32-C3 보드에서 직접 공급하지 말고, 서보 전류를 감당할 수
-있는 별도 전원을 사용하는 것이 좋다. ESP32와 서보 전원의 GND는 공통으로
-연결해야 한다.
+```powershell
+cd C:\pixi_ws
+pixi shell
+call C:\pixi_ws\ros2-windows\local_setup.bat
+call C:\dev\servo-bridge\ros2\install\local_setup.bat
+ros2 launch servo_bridge bridge.launch.py serial_port:=COM3
+```
 
-## 각도와 PWM 변환
+ESP32 포트가 `COM3`이 아니면 장치 관리자에서 확인한 포트로 바꾼다.
 
-### 각도 명령
+## 5. UI 실행
 
-`A` 명령의 값은 채널에 연결된 서보의 논리 제어각이다. 관절 채널에서는
-관절각으로 사용하고, 그리퍼 같은 보조 액추에이터 채널에서는 개폐 위치를
-나타내는 논리값으로 사용할 수 있다.
+브리지를 실행한 상태에서 두 번째 PowerShell 창을 열고 실행한다.
 
-1. 입력 각도를 채널별 `SERVO_MIN_DEG`와 `SERVO_MAX_DEG`로 제한한다.
-2. 채널별 런타임 오프셋 `servoOffsetDeg`를 더한다.
-3. 반전 채널은 `180 - 보정각`으로 방향을 바꾼다.
-4. 270° 서보는 전체 범위 중 중앙 180° 구간을 사용하도록 45°를 더한다.
-5. 결과를 500~2500 us 범위의 PWM 펄스로 변환한다.
+```powershell
+cd C:\pixi_ws
+pixi shell
+call C:\pixi_ws\ros2-windows\local_setup.bat
+call C:\dev\servo-bridge\ros2\install\local_setup.bat
+ros2 run servo_bridge control_ui
+```
 
-따라서 270° 서보에서 논리각 90°는 보정 전 기준으로 물리각 135°에
-대응한다.
+UI 사용 순서:
 
-오프셋 적용 후 각도 제한은 서보의 실제 가동범위를 사용한다. 180° 서보는
-`0~180°`, 270° 서보는 중앙 180° 구간 양쪽의 여유를 포함한 `-45~225°`
-범위로 제한한다. 따라서 270° 서보는 음수 또는 180° 초과 오프셋이 있어도
-물리 PWM 범위에 여유가 있는 동안 500~2500 us 범위를 사용할 수 있다.
+1. 상단에서 `connected=True`, `ready=True`인지 확인한다.
+2. 움직일 채널의 `Use`를 선택한다.
+3. `Command deg` 또는 슬라이더로 목표 각도를 정한다.
+4. `Duration ms`에 이동 시간을 입력한다.
+5. `Send selected` 또는 `Send all`을 누른다.
+6. 초기 위치로 이동하려면 `Reset`을 누른다.
 
-### 오프셋 설정 및 저장
+`Current deg/us`는 센서 측정값이 아니라 ESP32가 계산한 현재 상태다.
+`Target deg/us`는 ESP32가 접수한 목표값이다.
 
-현재 채널별 오프셋은 다음 명령으로 조회할 수 있다.
+## 설정 변경
+
+채널 이름, 종류, 각도 제한은 다음 파일에서 변경한다.
 
 ```text
-#OFFSET
+ros2/servo_bridge/config/servos.yaml
 ```
 
-정상 처리되면 `OK` 다음 줄에 8개 모터의 현재 오프셋을 모두 소수점 두
-자리로 출력한다.
+7번과 8번은 관절뿐 아니라 그리퍼 또는 보조 장치로 사용할 수 있다.
+설정 변경 후 ROS2 패키지를 다시 빌드한다.
 
-```text
-OK
-angle offset => motor1:-9.45,motor2:0.00,motor3:2.70,motor4:1.00,motor5:0.00,motor6:0.00,motor7:0.00,motor8:0.00
-```
+## 종료
 
-조회 명령은 NVS에 값을 다시 저장하거나 서보를 움직이지 않는다.
+UI를 먼저 닫고 브리지 PowerShell에서 `Ctrl+C`를 누른다.
 
-채널별 오프셋은 다음 시리얼 명령으로 변경할 수 있다.
+## 문제 해결
 
-```text
-#OFFSET#1A-9.45#3A2.7#4A1
-```
-
-- `#OFFSET` 뒤에 `#<모터번호>A<오프셋>`을 한 개 이상 붙인다.
-- 오프셋 단위는 degree이며 `-180.0~180.0` 범위의 소수를 사용할 수 있다.
-- 한 명령에서 지정하지 않은 모터의 기존 오프셋은 유지된다.
-- 같은 모터를 여러 번 지정하면 마지막 값이 저장된다.
-- 명령 전체를 먼저 검증하므로 한 항목이라도 잘못되면 아무 값도 변경하거나
-  저장하지 않는다.
-- 정상 처리되면 `OK`를 반환하고 다음 줄에 8개 모터의 현재 오프셋을 모두
-  소수점 두 자리로 출력한다.
-
-```text
-OK
-angle offset => motor1:-9.45,motor2:0.00,motor3:2.70,motor4:1.00,motor5:0.00,motor6:0.00,motor7:0.00,motor8:0.00
-```
-
-- 출력되는 값은 명령에서 지정하지 않은 모터의 기존 값도 포함한다.
-- 오프셋 배열 전체를 ESP32 NVS 비휘발성 저장소에 기록한다.
-- 재부팅 또는 전원 재인가 시 저장된 오프셋을 자동으로 불러온다.
-- 저장값이 없거나 크기 또는 값이 유효하지 않으면 코드의
-  `DEFAULT_SERVO_OFFSET_DEG`를 사용한다.
-- 새 오프셋은 이후 각도 명령과 다음 부팅의 초기 위치 계산에 적용된다.
-  오프셋 저장 명령만으로 현재 서보를 즉시 움직이지는 않는다.
-
-Raw PWM `P` 명령은 오프셋을 적용하지 않는다.
-
-### Raw PWM 명령
-
-`P` 명령은 500~2500 us 범위의 물리 PWM 펄스를 직접 지정한다. 채널별 방향,
-오프셋 및 논리각 제한은 적용하지 않는다. 범위를 벗어난 값은 500 또는
-2500 us로 제한된다.
-
-## 시리얼 통신
-
-시리얼 설정은 `115200 baud, 8N1`이다.
-
-- 명령은 ASCII 대문자를 사용한다.
-- 각 명령은 반드시 줄바꿈 `\n`으로 끝나야 한다.
-- `\r\n`을 보내도 `\r`은 무시되므로 정상 처리된다.
-- 한 줄의 최대 저장 길이는 종료 문자를 제외하고 159바이트이다.
-- 일반 채널 명령에는 공백이 허용되지 않는다. 테스트 제어 명령의 `ON` 또는
-  `OFF` 앞에는 공백 하나를 사용한다.
-
-## 명령 프로토콜
-
-### 초기 위치
-
-```text
-#RESET
-```
-
-모든 예약 명령을 취소하고 8개 채널을 각각의 초기 논리각인 90°로 이동시킨다.
-모터 8번을 즉시 시작하고 이후 7번부터 1번까지 1초 시작 간격으로
-역순 이동한다. 각 모터 이동은 기존 cosine 보간과 기준 최대 속도를 적용한다.
-
-부팅 때는 10 kΩ 풀업과 GPIO 10으로 PCA9685 `OE`를 HIGH로 유지해 모든
-출력을 차단한다. PCA9685 초기화와 전체 채널 OFF 설정을 마친 뒤 8번 모터의
-초기 PWM을 등록하고 `OE`를 LOW로 전환하며, 같은 순서로 초기 PWM을 인가한다.
-`READY`는 마지막 1번 모터의 초기 PWM 인가가 시작된 뒤 출력되며, 물리적인
-이동 완료를 뜻하지는 않는다. `#RESET`의 `OK`는 순차 이동 예약이 완료되면
-즉시 출력된다. 이후 각 모터가 실제로 이동을 시작할 때 다음 메시지를
-8번부터 1번까지 순차적으로 출력한다.
-
-```text
-OK
-RESET motor8 angle:90.00
-RESET motor7 angle:90.00
-...
-RESET motor1 angle:90.00
-```
-
-부팅 초기화에서는 `RESET motor...` 메시지를 출력하지 않는다.
-
-### 각도 제어
-
-```text
-#<채널>A<논리각>[T<실행시간>][D<시작지연>]
-```
-
-예:
-
-```text
-#1A30.4
-#1A110#2A110T3000#3A70T2000D1000
-```
-
-각도에는 소수점을 사용할 수 있다.
-
-### 기본 포지션
-
-미리 정의된 8채널 포지션으로 모든 모터를 함께 이동할 수 있다.
-
-```text
-#GOPOS1
-#GOPOS1T1000
-#GOPOS2T2000
-```
-
-- 포지션 번호는 1 또는 2이다.
-- `T`를 생략하면 기본 실행시간 2000ms를 적용한다.
-- `T`를 지정하면 100~9999ms 범위이며 모든 모터에 같은 요청 실행시간을
-  적용한다.
-- 요청시간이 기준 최대 속도보다 빠르면 모터별 안전 최소시간으로 자동
-  연장된다.
-- 현재 기본값은 POS1이 전 채널 90°, POS2가 전 채널 45°이다.
-- 값은 `SERVO_POSITIONS` 상수 배열에서 모터별로 변경한다.
-- 정상 접수되면 `OK` 다음 줄에 8개 모터의 각도와 예정 실행시간을 출력한다.
-
-### Raw PWM 제어
-
-```text
-#<채널>P<펄스_us>[T<실행시간>][D<시작지연>]
-```
-
-예:
-
-```text
-#1P1500#2P1500T1000D800
-```
-
-### 실행시간과 지연
-
-- `T`: 해당 채널의 이동 실행시간, 100~9999 ms
-- `D`: 해당 채널의 이동 시작 지연, 100~9999 ms
-- `T`와 `D`는 바로 앞의 채널에만 적용된다.
-- 두 옵션을 함께 쓸 때는 `T` 다음에 `D`가 와야 한다.
-- 지정하지 않은 채널의 현재 이동과 예약 명령은 그대로 유지된다.
-
-요청한 `T`가 60°/s 기준의 최소 이동시간보다 짧으면 펌웨어가 안전한
-최소시간으로 자동 연장한다. 더 긴 시간은 요청값을 그대로 사용한다.
-
-같은 명령 줄에 동일한 채널이 여러 번 나오면 마지막 설정만 적용된다.
-지연 대기 중인 채널에 새 명령이 들어오면 해당 채널의 기존 예약 명령은 취소되고
-새 명령으로 교체된다.
-
-### 자동 왕복 테스트 제어
-
-```text
-#TEST1
-#TEST8
-#TEST ON
-#TEST OFF
-#TEST
-```
-
-- `#TEST1`~`#TEST8`: 같은 번호의 모터를 선택하고 테스트를 켠다.
-- `#TEST0`은 사용할 수 없으며 PCA9685 채널 0도 비워 둔다.
-- 모터 번호 앞에는 공백을 넣지 않는다. `#TEST 5`가 아니라 `#TEST5`로
-  입력한다.
-- `#TEST ON`: 자동 왕복 테스트를 켠다.
-- `#TEST OFF`: 자동 왕복 테스트를 끈다.
-- `#TEST`: 현재 테스트 상태를 반대로 전환한다.
-
-테스트를 켜면 `SERVO_TEST_START_DELAY_MS` 이후 첫 이동을 시작한다. 테스트를
-끄더라도 이미 시작된 이동은 급정지하지 않고 완료되며, 다음 왕복부터
-실행하지 않는다. 채널 선택 명령을 실행하면 현재 이동이 끝난 뒤 새로 선택한
-채널에서 테스트가 시작된다.
-
-## 모션 처리
-
-각 채널은 별도의 시작 위치, 목표 위치, 시작 시각 및 실행시간을 가진다.
-펌웨어의 메인 루프는 다음 작업을 반복한다.
-
-1. 수신된 시리얼 명령을 읽고 파싱한다.
-2. 약 20 ms마다 진행 중인 모션을 갱신한다.
-3. 실행 시각에 도달한 지연 명령을 시작한다.
-4. 테스트 모드가 켜져 있으면 자동 왕복 동작을 관리한다.
-
-이동 보간에는 cosine ease-in/ease-out 곡선을 사용한다.
-
-```text
-eased = 0.5 - 0.5 * cos(PI * progress)
-```
-
-따라서 이동 시작과 종료 부근은 느리고 중간 구간은 상대적으로 빠르다.
-이동 중 새 명령을 받으면 현재 보간 위치를 먼저 계산한 뒤 그 위치에서 새
-목표로 이동한다.
-
-## 응답 및 상태 출력
-
-### 기본 응답
-
-| 출력 | 의미 |
-|---|---|
-| `READY` | 부팅 및 초기 서보 설정 완료 |
-| `OK` | 명령 파싱 및 등록 성공 |
-| `ERR,<코드>,<한국어 설명>,INPUT=<입력>` | 명령 거부 및 상세 진단 |
-
-`OK`는 물리적인 이동 완료가 아니라 명령이 정상적으로 접수되었다는 의미다.
-오류 응답은 UTF-8이며 영문 코드는 프로그램 판별용이고 한국어 문장은 사용자
-진단용이다.
-
-### 초기화 PWM 디버그
-
-`PWM_INITIALIZATION_DEBUG`가 `true`이면 ESP32 부팅 초기화와 각 시리얼
-`#RESET` 동작에서 실제 PCA9685 `setPWM()` 쓰기를 시리얼로 출력한다.
-일반 각도, Raw PWM 및 `#GOPOS` 명령은 출력하지 않는다.
-
-```text
-PWMDBG,START,phase=BOOT
-PWMDBG,seq=1,phase=BOOT,time=2045,motor=1,channel=1,on=0,off=0,pulse=OFF
-PWMDBG,STOP,phase=BOOT,total=16
-PWMDBG,START,phase=RESET
-PWMDBG,seq=1,phase=RESET,time=12000,motor=8,channel=8,on=0,off=307,pulse=1498.16us
-PWMDBG,STOP,phase=RESET,total=42
-```
-
-- `phase`는 부팅 초기화 `BOOT` 또는 시리얼 리셋 `RESET`이다.
-- `seq`는 각 디버그 구간에서 실제로 실행된 PCA9685 쓰기의 순번이다.
-- `time`은 쓰기 직후의 `millis()` 값이다.
-- `motor`와 `channel`은 모터 번호와 실제 PCA9685 채널이다.
-- `on`과 `off`는 `setPWM()`에 전달한 PCA9685 카운트다.
-- `pulse`는 OFF 또는 `off` 카운트를 환산한 펄스 폭이다.
-- `#RESET` 로그는 8번부터 1번까지의 예약과 실제 모션이 모두 끝나면 종료한다.
-- 이 기능은 시리얼 디버깅 전용이며 로그를 RAM이나 NVS에 저장하지 않는다.
-
-일반 각도 또는 Raw PWM 명령은 `OK` 다음 줄에 등록된 내용을 모터별로
-풀어서 출력한다. `duration`은 접수 시점에서 요청한 `T`와 60°/s 기준
-안전 최소시간 중 큰 예정 실행시간이며, 지연이 지정된 채널에는 `delay`도
-출력한다. 지연 대기 중 현재 위치가 바뀌면 실제 시작 시 안전 최소시간이
-다시 계산되어 더 길어질 수 있다.
-
-각도 명령에는 오프셋, 방향, 서보 가동범위를 적용한 목표 PWM 카운트와 해당
-카운트의 실제 펄스 폭도 함께 출력한다.
-
-```text
-OK
-motor1:angle 100.00,pulse 1425.72us,count 1150,duration 2.000s
-```
-
-```text
-OK
-motor1:pulse 1500.00us,duration 1.000s,delay 0.800s
-```
-
-```text
-ERR,TEST_AXIS,확장보드 0번은 사용하지 않습니다. PCA9685의 1번 채널과 1번 모터를 연결하세요.,INPUT=#TEST0
-```
-
-### STATE
-
-이동이 갱신될 때 다음 형식으로 출력한다.
-
-```text
-STATE,<1번 각도>/<1번 펄스>,<2번 각도>/<2번 펄스>,...,<8번 각도>/<8번 펄스>
-```
-
-예시 형식:
-
-```text
-STATE,90.0/1500.00,90.0/1570.00,90.0/1570.00,90.0/1610.00,90.0/1530.00,90.0/1500.00,90.0/1500.00,90.0/1500.00
-```
-
-위 값은 현재 채널별 방향과 오프셋을 적용한 초기 논리각 90°의 계산 결과다.
-
-- 각도는 소수점 한 자리로 출력된다.
-- 펄스는 현재 코드의 `Serial.print(float)` 기본 형식으로 출력된다.
-- 값은 센서나 엔코더 측정값이 아니라 펌웨어가 계산한 현재 보간 상태다.
-- Raw PWM 명령의 상태 각도도 역변환 계산값이며 실제 액추에이터 위치를 보장하지
-  않는다.
-
-소스 상단 주석에는 각도만 출력한다고 적혀 있지만, 현재 실제 구현은 각
-채널마다 `각도/펄스`를 출력한다.
-
-## 오류 코드
-
-| 오류 | 원인 |
-|---|---|
-| `ERR,EMPTY` | `#`로 시작하는 채널 명령이 없음 |
-| `ERR,CHANNEL` | 채널이 숫자가 아니거나 1~8 범위 밖임 |
-| `ERR,MODE` | 모드가 `A` 또는 `P`가 아님 |
-| `ERR,VALUE` | 각도 또는 펄스 값을 숫자로 읽을 수 없음 |
-| `ERR,TIME` | `T` 값이 없거나 100~9999 ms 범위 밖임 |
-| `ERR,DELAY` | `D` 값이 없거나 100~9999 ms 범위 밖임 |
-| `ERR,FORMAT` | 남은 문자, 잘못된 옵션 순서 등 전체 문법이 올바르지 않음 |
-| `ERR,TOO_LONG` | 수신 명령이 시리얼 버퍼 크기를 초과함 |
-| `ERR,TEST_AXIS` | `#TEST` 뒤의 모터 번호가 1~8 범위 밖임 |
-| `ERR,TEST_FORMAT` | `#TEST 5`처럼 테스트 명령에 잘못된 공백이나 문자가 있음 |
-| `ERR,PCA9685_NOT_FOUND` | I2C 주소 `0x40`에서 PCA9685를 찾지 못함 |
-| `ERR,OFFSET_EMPTY` | 오프셋 설정 명령에 설정할 모터가 없음 |
-| `ERR,OFFSET_CHANNEL` | 오프셋 모터 번호가 1~8 범위 밖임 |
-| `ERR,OFFSET_MODE` | 오프셋 앞에 `A`가 없음 |
-| `ERR,OFFSET_VALUE` | 오프셋이 숫자가 아니거나 -180~180° 범위 밖임 |
-| `ERR,OFFSET_FORMAT` | 오프셋 명령의 전체 형식이 올바르지 않음 |
-| `ERR,OFFSET_SAVE` | NVS 비휘발성 저장소 기록 실패 |
-| `ERR,GOPOS_INDEX` | 기본 포지션 번호가 1~2 범위 밖임 |
-| `ERR,GOPOS_TIME` | 기본 포지션의 `T` 값이 없거나 100~9999 ms 범위 밖임 |
-| `ERR,GOPOS_FORMAT` | 기본 포지션 명령의 전체 형식이 올바르지 않음 |
-
-잘못된 명령은 전체가 거부되며 일부 채널만 실행되지 않는다.
-
-## Python/ROS 2 연동 예
-
-```python
-import serial
-
-port = serial.Serial("/dev/ttyACM0", 115200, timeout=1)
-
-port.write(b"#RESET\r\n")
-port.write(b"#1A30.4\r\n")
-port.write(b"#1P1500#2P1500T1000D800\r\n")
-port.write(b"#1A45.5#2P1600#3A120T2000\r\n")
-port.write("#OFFSET#1A-9.45#3A2.7#4A1\r\n".encode("utf-8"))
-
-while True:
-    line = port.readline().decode("utf-8", errors="replace").strip()
-    if not line:
-        continue
-
-    if line == "READY":
-        print("controller ready")
-    elif line == "OK":
-        print("command accepted")
-    elif line.startswith("ERR,"):
-        print("command error:", line)
-    elif line.startswith("STATE,"):
-        print("state:", line)
-```
-
-Windows에서는 포트 이름을 `COM3` 같은 실제 장치 이름으로 변경해야 한다.
-
-## 자동 왕복 테스트
-
-PCB와 배선 진단을 위한 자동 왕복 기능이 포함되어 있다. 부팅 시 기본
-상태와 채널은 컴파일 시점 설정을 따른다.
-
-```cpp
-#define SERVO_TEST_MODE true
-#define SERVO_TEST_AXIS 1
-#define SERVO_TEST_LOW_DEG 45.0f
-#define SERVO_TEST_HIGH_DEG 135.0f
-#define SERVO_TEST_START_DELAY_MS 1500
-#define SERVO_TEST_PAUSE_MS 500
-```
-
-`SERVO_TEST_MODE`는 부팅 직후의 기본 테스트 상태를 결정한다. 현재 코드는
-`true`이므로 부팅 후 자동 테스트가 켜진다. 이후 `#TEST ON`, `#TEST OFF`
-또는 `#TEST` 명령으로 재부팅 없이 상태를 변경할 수 있다. `#TEST1`부터
-`#TEST8`까지의 명령은 테스트 모터를 선택하는 동시에 테스트를 켠다.
-
-`SERVO_TEST_AXIS`는 실제 모터 번호와 같으며 값 1은 모터 1이다.
-
-테스트 모드에서는 다음 메시지가 추가로 출력된다.
-
-```text
-TEST,ENABLED,SERVO,1
-TEST,DISABLED
-TEST,SERVO,1,ANGLE,135.0
-```
-
-## 보정 및 유지보수
-
-서보 또는 기구를 변경할 때는 `servo-bridge.ino` 상단의 다음 배열을 함께
-검토한다.
-
-| 설정 | 역할 |
-|---|---|
-| `SERVO_CHANNELS` | 각 모터에 대응하는 PCA9685 출력 채널 |
-| `SERVO_TRAVEL_DEG` | 서보의 전체 물리 가동 범위 |
-| `SERVO_INITIAL_DEG` | 부팅 및 `#RESET` 목표 논리각 |
-| `SERVO_POSITIONS` | `#GOPOS`에서 사용하는 기본 포지션별 8채널 논리각 |
-| `SERVO_DIRECTION` | 정방향 또는 반전 |
-| `DEFAULT_SERVO_OFFSET_DEG` | 저장된 값이 없을 때 사용하는 기본 오프셋 |
-| `SERVO_MIN_DEG` | 각도 명령의 채널별 최솟값 |
-| `SERVO_MAX_DEG` | 각도 명령의 채널별 최댓값 |
-
-보정 시에는 다음 순서가 안전하다.
-
-1. 서보 혼과 링크를 분리하거나 충돌하지 않는 상태로 준비한다.
-2. raw PWM 1500 us 부근에서 서보의 기계적 중앙을 확인한다.
-3. 채널 방향을 `SERVO_DIRECTION`으로 맞춘다.
-4. `#OFFSET` 명령으로 작은 값부터 오프셋을 조정하고 저장한다.
-5. 실제 기구 한계보다 여유 있게 최소/최대 논리각을 설정한다.
-6. 저속 또는 긴 `T` 값으로 전체 범위를 검증한다.
-
-## 현재 구현에서 알아둘 점
-
-- 서보 피드백 입력은 없으며 모든 상태는 open-loop 계산값이다.
-- `#RESET`은 모든 진행 모션과 예약 명령을 취소하고, 현재 계산 위치에서
-  8번부터 1번까지 1초 시작 간격으로 초기각까지 부드럽게 이동한다.
-- 지연 명령은 채널별로 하나만 저장된다.
-- 펄스 변화 데드밴드와 마지막 보정은 PCA9685 카운터 단위로 판단한다.
-- 시리얼 처리, 모션 갱신 및 지연 실행은 단일 Arduino `loop()`에서
-  비차단 방식으로 수행된다.
-- 현재 저장된 빌드 결과는 ESP32 Arduino 코어 `3.3.10` 기준이며, 라이브러리
-  또는 코어 버전 변경 시 PWM API 동작을 다시 확인해야 한다.
-Arduino IDE에서는 다음 중 하나로 설정해야 USB의 `COM3`에서 `Serial`이 동작한다.
-
-- 권장: `Tools > Board > ESP32 Arduino > Nologo ESP32C3 Super Mini`
-- 대안: `ESP32C3 Dev Module`을 사용할 경우 `Tools > USB CDC On Boot > Enabled`
-
-`ESP32C3 Dev Module`의 `USB CDC On Boot` 기본값은 `Disabled`이므로 기본 설정으로
-업로드하면 스케치의 `Serial`은 USB COM 포트가 아닌 UART0로 연결된다.
+- `connected=False`: COM 포트 번호와 다른 시리얼 프로그램의 포트 점유를 확인한다.
+- `ready=False`: ESP32 시리얼에 `READY`가 출력되는지 확인한다.
+- UI가 열리지 않음: ROS2 빌드 후 `install\local_setup.bat`을 다시 실행한다.
+- 서보가 움직이지 않음: 별도 서보 전원, 공통 GND, PCA9685 `V+`를 확인한다.
+- RTI Connext 경고: 현재 사용하는 Cyclone DDS와 무관하므로 무시해도 된다.

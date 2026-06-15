@@ -416,7 +416,6 @@ void writeServoPulse(size_t axis, float logicalPulseUs, bool forceWrite) {
 }
 
 void reportCurrentAngles() {
-  return;
   Serial.print("STATE");
   for (size_t axis = 0; axis < SERVO_COUNT; ++axis) {
     Serial.print(',');
@@ -425,7 +424,7 @@ void reportCurrentAngles() {
     Serial.print(currentPulseUs[axis]);
   }
   Serial.println();
-  
+
 }
 
 bool updateMotion(uint32_t nowMs, bool forceEvaluation) {
@@ -1262,6 +1261,7 @@ void loop() {
       bootInitializationPending = false;
       stopPwmDebug();
       Serial.println("READY");
+      reportCurrentAngles();
       if (servoTestEnabled) {
         Serial.print("TEST,ENABLED,SERVO,");
         Serial.println(servoTestAxis + 1);

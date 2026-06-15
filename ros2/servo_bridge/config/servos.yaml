@@ -1,0 +1,49 @@
+channels:
+  - motor: 1
+    name: motor_1
+    display_name: Motor 1
+    type: joint
+    min_deg: 0.0
+    max_deg: 180.0
+  - motor: 2
+    name: motor_2
+    display_name: Motor 2
+    type: joint
+    min_deg: 0.0
+    max_deg: 180.0
+  - motor: 3
+    name: motor_3
+    display_name: Motor 3
+    type: joint
+    min_deg: 0.0
+    max_deg: 180.0
+  - motor: 4
+    name: motor_4
+    display_name: Motor 4
+    type: joint
+    min_deg: 0.0
+    max_deg: 180.0
+  - motor: 5
+    name: motor_5
+    display_name: Motor 5
+    type: joint
+    min_deg: 0.0
+    max_deg: 180.0
+  - motor: 6
+    name: motor_6
+    display_name: Motor 6
+    type: joint
+    min_deg: 70.0
+    max_deg: 150.0
+  - motor: 7
+    name: gripper
+    display_name: Gripper
+    type: gripper
+    min_deg: 0.0
+    max_deg: 180.0
+  - motor: 8
+    name: auxiliary
+    display_name: Auxiliary
+    type: auxiliary
+    min_deg: 0.0
+    max_deg: 180.0

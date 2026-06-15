@@ -1,2 +1,11 @@
 .build/
 .build-cdc-disabled/
+__pycache__/
+.pytest_cache/
+*.pyc
+ros2/servo_bridge/build/
+ros2/servo_bridge/install/
+ros2/servo_bridge/log/
+ros2/build/
+ros2/install/
+ros2/log/
