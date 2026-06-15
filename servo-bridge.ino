@@ -45,7 +45,7 @@
 
   정상적으로 명령을 받으면 "OK"를 반환한다.
   잘못된 명령은 "ERR,<코드>,<한국어 설명>,INPUT=<입력>"을 반환한다.
-  이동 중에는 각 5 ms 모션 갱신 후 아래 형식으로 현재 명령 각도를 반환한다.
+  이동 중에는 각 20 ms 모션 갱신 후 아래 형식으로 현재 명령 각도를 반환한다.
     STATE,<1번 각도>,<2번 각도>,...,<8번 각도>
   STATE 값은 센서 측정값이 아니라 ESP32가 계산한 현재 보간 각도이다.
   ROS2 브리지는 줄의 첫 필드로 READY, OK, ERR, STATE를 구분하면 된다.
@@ -68,13 +68,13 @@
 #define SERVO_POSITION_COUNT 2
 #define SERVO_POSITION_DEFAULT_TIME_MS 2000
 #define SERIAL_BAUD_RATE 115200
-#define SERVO_UPDATE_INTERVAL_MS 5
-#define SERVO_SPEED_DEG_PER_SEC 90.0f //1초동안 몇도 이상 못 움직이게. 값을 올리면 빨라진다. 안전을 위해 일부러 느리게 만들었음
+#define SERVO_UPDATE_INTERVAL_MS 20
+#define SERVO_SPEED_DEG_PER_SEC 120.0f //1초동안 몇도 이상 못 움직이게. 값을 올리면 빨라진다. 안전을 위해 일부러 느리게 만들었음
 #define SERVO_DEADZONE_COUNTS 3
 #define SERVO_FINAL_STEP_COUNTS 3
 #define SERVO_RESET_STAGGER_MS 1000
 #define SERIAL_BUFFER_SIZE 160
-#define PWM_BOOT_DEBUG true
+#define PWM_INITIALIZATION_DEBUG true
 
 // PCB/배선 진단용 자동 왕복 테스트. 테스트가 끝나면 false로 변경한다. AXIS 1은 1번 모터를 지칭한다. 0 번 채털이 아니다.
 #define SERVO_TEST_MODE false
@@ -93,11 +93,11 @@ const uint8_t PCA9685_SCL_PIN = 9;
 const uint8_t PCA9685_OE_PIN = 10;
 const uint32_t PCA9685_I2C_FREQUENCY_HZ = 400000;
 const uint32_t PCA9685_OSCILLATOR_HZ = 25000000;
-const uint16_t PCA9685_PWM_FREQUENCY_HZ = 200;
-const uint8_t PCA9685_200HZ_PRESCALE = 30;
+const uint16_t PCA9685_PWM_FREQUENCY_HZ = 50;
+const uint8_t PCA9685_50HZ_PRESCALE = 121;
 const float PCA9685_ACTUAL_FREQUENCY_HZ =
   (float)PCA9685_OSCILLATOR_HZ
-    / (4096.0f * ((float)PCA9685_200HZ_PRESCALE + 1.0f));
+    / (4096.0f * ((float)PCA9685_50HZ_PRESCALE + 1.0f));
 
 const uint8_t SERVO_CHANNELS[SERVO_COUNT] = {1, 2, 3, 4, 5, 6, 7, 8};
 const char OFFSET_NVS_NAMESPACE[] = "servo-bridge";
@@ -154,8 +154,13 @@ const float SERVO_PULSE_RANGE_US =
 
 Adafruit_PWMServoDriver pwm(SERVO_PWM_I2C_ADDRESS, Wire);
 bool pca9685Ready = false;
-bool pwmBootDebugActive = PWM_BOOT_DEBUG;
-uint32_t pwmBootDebugWriteCount = 0;
+enum PwmDebugPhase : uint8_t {
+  PWM_DEBUG_NONE,
+  PWM_DEBUG_BOOT,
+  PWM_DEBUG_RESET
+};
+PwmDebugPhase pwmDebugPhase = PWM_DEBUG_NONE;
+uint32_t pwmDebugWriteCount = 0;
 
 // 모든 펄스 상태값은 실제 출력되는 raw PWM 값이다.
 float currentPulseUs[SERVO_COUNT];
@@ -334,16 +339,45 @@ float pwmCountToPulseUs(uint16_t count) {
     / (PCA9685_ACTUAL_FREQUENCY_HZ * 4096.0f);
 }
 
-void setServoPwm(size_t axis, uint16_t onCount, uint16_t offCount) {
-  pwm.setPWM(SERVO_CHANNELS[axis], onCount, offCount);
+const char *pwmDebugPhaseName() {
+  return pwmDebugPhase == PWM_DEBUG_BOOT ? "BOOT" : "RESET";
+}
 
-  if (!pwmBootDebugActive) {
+void startPwmDebug(PwmDebugPhase phase) {
+  if (!PWM_INITIALIZATION_DEBUG) {
     return;
   }
 
-  ++pwmBootDebugWriteCount;
+  pwmDebugPhase = phase;
+  pwmDebugWriteCount = 0;
+  Serial.print("PWMDBG,START,phase=");
+  Serial.println(pwmDebugPhaseName());
+}
+
+void stopPwmDebug() {
+  if (pwmDebugPhase == PWM_DEBUG_NONE) {
+    return;
+  }
+
+  Serial.print("PWMDBG,STOP,phase=");
+  Serial.print(pwmDebugPhaseName());
+  Serial.print(",total=");
+  Serial.println(pwmDebugWriteCount);
+  pwmDebugPhase = PWM_DEBUG_NONE;
+}
+
+void setServoPwm(size_t axis, uint16_t onCount, uint16_t offCount) {
+  pwm.setPWM(SERVO_CHANNELS[axis], onCount, offCount);
+
+  if (pwmDebugPhase == PWM_DEBUG_NONE) {
+    return;
+  }
+
+  ++pwmDebugWriteCount;
   Serial.print("PWMDBG,seq=");
-  Serial.print(pwmBootDebugWriteCount);
+  Serial.print(pwmDebugWriteCount);
+  Serial.print(",phase=");
+  Serial.print(pwmDebugPhaseName());
   Serial.print(",time=");
   Serial.print(millis());
   Serial.print(",motor=");
@@ -1066,16 +1100,12 @@ void processCommand(const char *line) {
   }
 
   if (strcmp(line, "#RESET") == 0) {
-    if (pwmBootDebugActive) {
-      pwmBootDebugActive = false;
-      Serial.print("PWMDBG,STOP,total=");
-      Serial.println(pwmBootDebugWriteCount);
-    }
     if (!pca9685Ready) {
       sendError("PCA9685_NOT_FOUND", line);
       return;
     }
 
+    startPwmDebug(PWM_DEBUG_RESET);
     scheduleSequentialReset(millis(), true);
     Serial.println("OK");
     return;
@@ -1188,9 +1218,7 @@ void setup() {
     delay(10);
   }
   Serial.println("BOOT");
-  if (pwmBootDebugActive) {
-    Serial.println("PWMDBG,START");
-  }
+  startPwmDebug(PWM_DEBUG_BOOT);
 
   loadServoOffsets();
 
@@ -1232,6 +1260,7 @@ void loop() {
     updatePendingCommand(nowMs);
     if (!anyPendingAxisCommand()) {
       bootInitializationPending = false;
+      stopPwmDebug();
       Serial.println("READY");
       if (servoTestEnabled) {
         Serial.print("TEST,ENABLED,SERVO,");
@@ -1246,5 +1275,10 @@ void loop() {
   const uint32_t nowMs = millis();
   updateMotion(nowMs, false);
   updatePendingCommand(nowMs);
+  if (pwmDebugPhase == PWM_DEBUG_RESET
+      && !anyPendingAxisCommand()
+      && !anyAxisMoving()) {
+    stopPwmDebug();
+  }
   updateServoTest(nowMs);
 }

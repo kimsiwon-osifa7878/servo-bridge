@@ -49,13 +49,13 @@ PCA9685 배선:
 
 공통 PWM 설정:
 
-- PWM 설정 주파수: 200 Hz
+- PWM 설정 주파수: 50 Hz
 - PCA9685 분해능: 12비트
-- 25 MHz 기본 발진기 기준 실제 주파수: 약 196.9 Hz
-- 한 카운트의 펄스 폭: 약 1.24 us
+- 25 MHz 기본 발진기 기준 실제 주파수: 약 50.03 Hz
+- 한 카운트의 펄스 폭: 약 4.88 us
 - 최소 펄스: 500 us
 - 최대 펄스: 2500 us
-- 모션 갱신 주기: 5 ms
+- 모션 갱신 주기: 20 ms
 - 기준 최대 속도: 60°/s
 
 서보 전원은 ESP32-C3 보드에서 직접 공급하지 말고, 서보 전류를 감당할 수
@@ -270,7 +270,7 @@ RESET motor1 angle:90.00
 펌웨어의 메인 루프는 다음 작업을 반복한다.
 
 1. 수신된 시리얼 명령을 읽고 파싱한다.
-2. 약 5 ms마다 진행 중인 모션을 갱신한다.
+2. 약 20 ms마다 진행 중인 모션을 갱신한다.
 3. 실행 시각에 도달한 지연 명령을 시작한다.
 4. 테스트 모드가 켜져 있으면 자동 왕복 동작을 관리한다.
 
@@ -298,24 +298,28 @@ eased = 0.5 - 0.5 * cos(PI * progress)
 오류 응답은 UTF-8이며 영문 코드는 프로그램 판별용이고 한국어 문장은 사용자
 진단용이다.
 
-### 부팅 PWM 디버그
+### 초기화 PWM 디버그
 
-`PWM_BOOT_DEBUG`가 `true`이면 ESP32 부팅 직후부터 첫 번째 시리얼 `#RESET`
-명령을 받기 전까지 실제 PCA9685 `setPWM()` 쓰기를 시리얼로 출력한다.
+`PWM_INITIALIZATION_DEBUG`가 `true`이면 ESP32 부팅 초기화와 각 시리얼
+`#RESET` 동작에서 실제 PCA9685 `setPWM()` 쓰기를 시리얼로 출력한다.
+일반 각도, Raw PWM 및 `#GOPOS` 명령은 출력하지 않는다.
 
 ```text
-PWMDBG,START
-PWMDBG,seq=1,time=2045,motor=1,channel=1,on=0,off=0,pulse=OFF
-PWMDBG,seq=9,time=2050,motor=8,channel=8,on=0,off=1209,pulse=1499.16us
-PWMDBG,STOP,total=16
+PWMDBG,START,phase=BOOT
+PWMDBG,seq=1,phase=BOOT,time=2045,motor=1,channel=1,on=0,off=0,pulse=OFF
+PWMDBG,STOP,phase=BOOT,total=16
+PWMDBG,START,phase=RESET
+PWMDBG,seq=1,phase=RESET,time=12000,motor=8,channel=8,on=0,off=307,pulse=1498.16us
+PWMDBG,STOP,phase=RESET,total=42
 ```
 
-- `seq`는 이번 부팅에서 실제로 실행된 PCA9685 쓰기의 순번이다.
+- `phase`는 부팅 초기화 `BOOT` 또는 시리얼 리셋 `RESET`이다.
+- `seq`는 각 디버그 구간에서 실제로 실행된 PCA9685 쓰기의 순번이다.
 - `time`은 쓰기 직후의 `millis()` 값이다.
 - `motor`와 `channel`은 모터 번호와 실제 PCA9685 채널이다.
 - `on`과 `off`는 `setPWM()`에 전달한 PCA9685 카운트다.
 - `pulse`는 OFF 또는 `off` 카운트를 환산한 펄스 폭이다.
-- 첫 `#RESET`을 인식하면 해당 명령의 PWM 쓰기 전에 로깅을 종료한다.
+- `#RESET` 로그는 8번부터 1번까지의 예약과 실제 모션이 모두 끝나면 종료한다.
 - 이 기능은 시리얼 디버깅 전용이며 로그를 RAM이나 NVS에 저장하지 않는다.
 
 일반 각도 또는 Raw PWM 명령은 `OK` 다음 줄에 등록된 내용을 모터별로
