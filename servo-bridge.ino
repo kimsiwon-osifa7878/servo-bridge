@@ -69,11 +69,12 @@
 #define SERVO_POSITION_DEFAULT_TIME_MS 2000
 #define SERIAL_BAUD_RATE 115200
 #define SERVO_UPDATE_INTERVAL_MS 5
-#define SERVO_SPEED_DEG_PER_SEC 120.0f //1초동안 몇도 이상 못 움직이게. 값을 올리면 빨라진다. 안전을 위해 일부러 느리게 만들었음
+#define SERVO_SPEED_DEG_PER_SEC 90.0f //1초동안 몇도 이상 못 움직이게. 값을 올리면 빨라진다. 안전을 위해 일부러 느리게 만들었음
 #define SERVO_DEADZONE_COUNTS 3
 #define SERVO_FINAL_STEP_COUNTS 3
 #define SERVO_RESET_STAGGER_MS 1000
 #define SERIAL_BUFFER_SIZE 160
+#define PWM_BOOT_DEBUG true
 
 // PCB/배선 진단용 자동 왕복 테스트. 테스트가 끝나면 false로 변경한다. AXIS 1은 1번 모터를 지칭한다. 0 번 채털이 아니다.
 #define SERVO_TEST_MODE false
@@ -89,6 +90,7 @@
 const uint8_t SERVO_PWM_I2C_ADDRESS = 0x40;
 const uint8_t PCA9685_SDA_PIN = 8;
 const uint8_t PCA9685_SCL_PIN = 9;
+const uint8_t PCA9685_OE_PIN = 10;
 const uint32_t PCA9685_I2C_FREQUENCY_HZ = 400000;
 const uint32_t PCA9685_OSCILLATOR_HZ = 25000000;
 const uint16_t PCA9685_PWM_FREQUENCY_HZ = 200;
@@ -152,6 +154,8 @@ const float SERVO_PULSE_RANGE_US =
 
 Adafruit_PWMServoDriver pwm(SERVO_PWM_I2C_ADDRESS, Wire);
 bool pca9685Ready = false;
+bool pwmBootDebugActive = PWM_BOOT_DEBUG;
+uint32_t pwmBootDebugWriteCount = 0;
 
 // 모든 펄스 상태값은 실제 출력되는 raw PWM 값이다.
 float currentPulseUs[SERVO_COUNT];
@@ -330,6 +334,35 @@ float pwmCountToPulseUs(uint16_t count) {
     / (PCA9685_ACTUAL_FREQUENCY_HZ * 4096.0f);
 }
 
+void setServoPwm(size_t axis, uint16_t onCount, uint16_t offCount) {
+  pwm.setPWM(SERVO_CHANNELS[axis], onCount, offCount);
+
+  if (!pwmBootDebugActive) {
+    return;
+  }
+
+  ++pwmBootDebugWriteCount;
+  Serial.print("PWMDBG,seq=");
+  Serial.print(pwmBootDebugWriteCount);
+  Serial.print(",time=");
+  Serial.print(millis());
+  Serial.print(",motor=");
+  Serial.print(axis + 1);
+  Serial.print(",channel=");
+  Serial.print(SERVO_CHANNELS[axis]);
+  Serial.print(",on=");
+  Serial.print(onCount);
+  Serial.print(",off=");
+  Serial.print(offCount);
+  Serial.print(",pulse=");
+  if (onCount == 0 && offCount == 0) {
+    Serial.println("OFF");
+  } else {
+    Serial.print(pwmCountToPulseUs(offCount), 2);
+    Serial.println("us");
+  }
+}
+
 void writeServoPulse(size_t axis, float logicalPulseUs, bool forceWrite) {
   if (!pca9685Ready) {
     return;
@@ -343,7 +376,7 @@ void writeServoPulse(size_t axis, float logicalPulseUs, bool forceWrite) {
     abs((int)pwmCount - lastWrittenPwmCount[axis]);
 
   if (forceWrite || changeCounts >= SERVO_DEADZONE_COUNTS) {
-    pwm.setPWM(SERVO_CHANNELS[axis], 0, pwmCount);
+    setServoPwm(axis, 0, pwmCount);
     lastWrittenPwmCount[axis] = pwmCount;
   }
 }
@@ -570,6 +603,11 @@ void updatePendingCommand(uint32_t nowMs) {
       command.requestedTimeMs,
       nowMs
     );
+    if (bootInitializationPending
+        && pca9685Ready
+        && axis == SERVO_COUNT - 1) {
+      digitalWrite(PCA9685_OE_PIN, LOW);
+    }
   }
 }
 
@@ -1028,6 +1066,11 @@ void processCommand(const char *line) {
   }
 
   if (strcmp(line, "#RESET") == 0) {
+    if (pwmBootDebugActive) {
+      pwmBootDebugActive = false;
+      Serial.print("PWMDBG,STOP,total=");
+      Serial.println(pwmBootDebugWriteCount);
+    }
     if (!pca9685Ready) {
       sendError("PCA9685_NOT_FOUND", line);
       return;
@@ -1136,12 +1179,18 @@ void readSerialCommands() {
 }
 
 void setup() {
+  digitalWrite(PCA9685_OE_PIN, HIGH);
+  pinMode(PCA9685_OE_PIN, OUTPUT);
+
   Serial.begin(SERIAL_BAUD_RATE);
   const uint32_t serialWaitStartMs = millis();
   while (!Serial && millis() - serialWaitStartMs < 2000) {
     delay(10);
   }
   Serial.println("BOOT");
+  if (pwmBootDebugActive) {
+    Serial.println("PWMDBG,START");
+  }
 
   loadServoOffsets();
 
@@ -1169,7 +1218,7 @@ void setup() {
     axisMotionDurationMs[axis] = 0;
     lastWrittenPwmCount[axis] = -1;
     if (pca9685Ready) {
-      pwm.setPWM(SERVO_CHANNELS[axis], 0, 0);
+      setServoPwm(axis, 0, 0);
     }
   }
 
