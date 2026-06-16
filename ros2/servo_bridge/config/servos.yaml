@@ -35,15 +35,3 @@ channels:
     type: joint
     min_deg: 70.0
     max_deg: 150.0
-  - motor: 7
-    name: gripper
-    display_name: Gripper
-    type: gripper
-    min_deg: 0.0
-    max_deg: 180.0
-  - motor: 8
-    name: auxiliary
-    display_name: Auxiliary
-    type: auxiliary
-    min_deg: 0.0
-    max_deg: 180.0

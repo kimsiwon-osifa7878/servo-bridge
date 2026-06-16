@@ -15,12 +15,12 @@ CONFIG = load_bridge_config(
 def test_builds_motor_ordered_command_and_clamps_short_duration() -> None:
     command = trajectory_to_serial_command(
         CONFIG,
-        ["gripper", "motor_1"],
-        [math.radians(45), math.radians(90)],
+        ["motor_6", "motor_1"],
+        [math.radians(90), math.radians(90)],
         0.02,
     )
 
-    assert command == "#1A90.000T100#7A45.000T100"
+    assert command == "#1A90.000T100#6A90.000T100"
 
 
 def test_rejects_out_of_range_angle() -> None:

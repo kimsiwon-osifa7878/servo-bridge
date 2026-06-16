@@ -14,6 +14,7 @@ class EventKind(str, Enum):
     DEBUG = "debug"
     TEST = "test"
     OFFSET = "offset"
+    PINMAP = "pinmap"
     UNKNOWN = "unknown"
 
 
@@ -31,6 +32,7 @@ class ServoTarget:
     input_value: float
     pulse_us: float
     count: int | None
+    pin: int | None
     duration_seconds: float
     delay_seconds: float
 
@@ -49,12 +51,12 @@ class ProtocolEvent:
 _ERROR_RE = re.compile(r"^ERR,([^,]+),(.*),INPUT=(.*)$")
 _RESET_RE = re.compile(r"^RESET motor(\d+) angle:([-+]?\d+(?:\.\d+)?)$")
 _ANGLE_TARGET_RE = re.compile(
-    r"^motor(\d+):angle ([-+]?\d+(?:\.\d+)?),pulse "
-    r"([-+]?\d+(?:\.\d+)?)us,count (\d+),duration "
+    r"^motor(\d+):angle ([-+]?\d+(?:\.\d+)?)(?:,pin (\d+))?,pulse "
+    r"([-+]?\d+(?:\.\d+)?)us(?:,count (\d+))?,duration "
     r"([-+]?\d+(?:\.\d+)?)s(?:,delay ([-+]?\d+(?:\.\d+)?)s)?$"
 )
 _PULSE_TARGET_RE = re.compile(
-    r"^motor(\d+):pulse ([-+]?\d+(?:\.\d+)?)us,duration "
+    r"^motor(\d+):pulse ([-+]?\d+(?:\.\d+)?)us(?:,pin (\d+))?,duration "
     r"([-+]?\d+(?:\.\d+)?)s(?:,delay ([-+]?\d+(?:\.\d+)?)s)?$"
 )
 
@@ -73,6 +75,8 @@ def parse_line(line: str) -> ProtocolEvent:
         return ProtocolEvent(EventKind.TEST, raw)
     if raw.startswith("angle offset => "):
         return ProtocolEvent(EventKind.OFFSET, raw)
+    if raw.startswith("PINMAP,"):
+        return ProtocolEvent(EventKind.PINMAP, raw)
 
     error_match = _ERROR_RE.match(raw)
     if error_match:
@@ -109,10 +113,19 @@ def parse_line(line: str) -> ProtocolEvent:
                     motor=int(angle_match.group(1)),
                     mode="angle",
                     input_value=float(angle_match.group(2)),
-                    pulse_us=float(angle_match.group(3)),
-                    count=int(angle_match.group(4)),
-                    duration_seconds=float(angle_match.group(5)),
-                    delay_seconds=float(angle_match.group(6) or 0.0),
+                    pulse_us=float(angle_match.group(4)),
+                    count=(
+                        int(angle_match.group(5))
+                        if angle_match.group(5) is not None
+                        else None
+                    ),
+                    pin=(
+                        int(angle_match.group(3))
+                        if angle_match.group(3) is not None
+                        else None
+                    ),
+                    duration_seconds=float(angle_match.group(6)),
+                    delay_seconds=float(angle_match.group(7) or 0.0),
                 )
             )
             continue
@@ -126,8 +139,13 @@ def parse_line(line: str) -> ProtocolEvent:
                     input_value=pulse_us,
                     pulse_us=pulse_us,
                     count=None,
-                    duration_seconds=float(pulse_match.group(3)),
-                    delay_seconds=float(pulse_match.group(4) or 0.0),
+                    pin=(
+                        int(pulse_match.group(3))
+                        if pulse_match.group(3) is not None
+                        else None
+                    ),
+                    duration_seconds=float(pulse_match.group(4)),
+                    delay_seconds=float(pulse_match.group(5) or 0.0),
                 )
             )
             continue

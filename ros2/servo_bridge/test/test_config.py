@@ -12,9 +12,9 @@ CONFIG = Path(__file__).parents[1] / "config" / "servos.yaml"
 def test_loads_channel_roles_and_limits() -> None:
     config = load_bridge_config(CONFIG)
 
-    assert len(config.channels) == 8
-    assert config.by_name()["gripper"].motor == 7
-    assert config.by_name()["auxiliary"].actuator_type == "auxiliary"
+    assert len(config.channels) == 6
+    assert config.by_name()["motor_1"].motor == 1
+    assert config.by_name()["motor_6"].actuator_type == "joint"
     assert config.by_name()["motor_6"].min_deg == 70.0
 
 
