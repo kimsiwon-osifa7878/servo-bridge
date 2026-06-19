@@ -144,6 +144,7 @@ struct PendingAxisCommand {
 
 PendingAxisCommand pendingAxisCommand[SERVO_COUNT] = {};
 bool bootInitializationPending = false;
+bool stateStreamingEnabled = false;
 
 bool servoTestEnabled = SERVO_TEST_MODE;
 size_t servoTestAxis = SERVO_TEST_AXIS - 1;
@@ -376,6 +377,11 @@ void reportCurrentAngles() {
   Serial.println();
 }
 
+void reportStateStreaming() {
+  Serial.print("STATE_STREAM,");
+  Serial.println(stateStreamingEnabled ? "ON" : "OFF");
+}
+
 bool updateMotion(uint32_t nowMs, bool forceEvaluation) {
   if (!forceEvaluation
       && (uint32_t)(nowMs - lastMotionUpdateMs)
@@ -410,7 +416,7 @@ bool updateMotion(uint32_t nowMs, bool forceEvaluation) {
     anyMotionUpdated = true;
   }
 
-  if (anyMotionUpdated) {
+  if (anyMotionUpdated && stateStreamingEnabled) {
     reportCurrentAngles();
   }
   return anyMotionUpdated;
@@ -659,6 +665,8 @@ void sendError(const char *reason, const char *input) {
     Serial.print("테스트 모터 번호 앞에 공백을 넣지 마세요. 예: #TEST5");
   } else if (strcmp(reason, "SERVO_OUTPUT_INIT") == 0) {
     Serial.print("ESP32 서보 출력 초기화에 실패했습니다. 50Hz 16-bit LEDC 지원과 GPIO 핀을 확인하세요.");
+  } else if (strcmp(reason, "STATE_FORMAT") == 0) {
+    Serial.print("STATE 출력 설정은 #STATE, #STATE ON, #STATE OFF만 사용할 수 있습니다.");
   } else if (strcmp(reason, "OFFSET_EMPTY") == 0) {
     Serial.print("저장할 오프셋이 없습니다.");
   } else if (strcmp(reason, "OFFSET_CHANNEL") == 0) {
@@ -1085,6 +1093,29 @@ void processCommand(const char *line) {
     memcpy(servoOffsetDeg, updatedOffsets, sizeof(servoOffsetDeg));
     Serial.println("OK");
     reportServoOffsets();
+    return;
+  }
+
+  if (strcmp(line, "#STATE") == 0) {
+    Serial.println("OK");
+    reportStateStreaming();
+    return;
+  }
+
+  if (strcmp(line, "#STATE ON") == 0) {
+    stateStreamingEnabled = true;
+    Serial.println("OK");
+    return;
+  }
+
+  if (strcmp(line, "#STATE OFF") == 0) {
+    stateStreamingEnabled = false;
+    Serial.println("OK");
+    return;
+  }
+
+  if (strncmp(line, "#STATE", strlen("#STATE")) == 0) {
+    sendError("STATE_FORMAT", line);
     return;
   }
 
